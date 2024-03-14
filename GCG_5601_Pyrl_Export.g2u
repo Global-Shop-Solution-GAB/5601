@@ -1,0 +1,321 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	V.Local.sCymd.Declare(String,"")
+	V.Local.sTime.Declare(String,"")
+	V.Local.bRet.Declare(Boolean,False)
+	V.Local.sDir.Declare(String,"")
+	
+	F.Intrinsic.Control.If(V.Caller.Hook,=,"15290")
+		F.Intrinsic.Control.If(V.Caller.GlobalDir.Right1,<>,"\")
+			F.Intrinsic.String.Build("{0}\Customer",V.Caller.GlobalDir,V.Local.sDir)
+		F.Intrinsic.Control.Else
+			F.Intrinsic.String.Build("{0}Customer",V.Caller.GlobalDir,V.Local.sDir)
+		F.Intrinsic.Control.EndIf
+		
+		F.Intrinsic.File.DirExists(V.Local.sDir,V.Local.bRet)
+		F.Intrinsic.Control.If(V.Local.bRet,=,False)
+			F.Intrinsic.File.CreateDir(V.Local.sDir)
+		F.Intrinsic.Control.EndIf
+		
+		F.Intrinsic.String.Build("{0}\5601",V.Local.sDir,V.Local.sDir)
+		
+		F.Intrinsic.File.DirExists(V.Local.sDir,V.Local.bRet)
+		F.Intrinsic.Control.If(V.Local.bRet,=,False)
+			F.Intrinsic.File.CreateDir(V.Local.sDir)
+		F.Intrinsic.Control.EndIf
+		
+		'date time V.passed.888888
+		'formatting date and time
+		F.Intrinsic.String.Left(V.Passed.888888,8,V.Local.sCymd)
+		F.Intrinsic.String.Mid(V.Passed.888888,9,6,V.Local.sTime)
+'		V.Local.sCymd.Set("20180321")
+'		V.Local.sTime.Set("082219")
+		'calling sub to get records
+		F.Intrinsic.Control.CallSub(Get_Data,"Cymd",V.Local.sCymd,"Time",V.Local.sTime)
+		F.Intrinsic.Control.If(V.DataTable.DT.Exists)
+			F.Intrinsic.Control.If(V.DataTable.DT.RowCount--,<>,-1)
+				'consolidating employee records to single line
+				F.Intrinsic.Control.CallSub(Process_Data)
+				F.Intrinsic.Variable.ArgExists("File",V.Local.bRet)
+				F.Intrinsic.Control.If(V.Local.bRet)
+					'creating file
+					F.Intrinsic.Control.CallSub(Create_File,"File",V.Args.File)
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.CallSub(Exit)
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5601_Pyrl_Export.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(Exit)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Get_Data.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	V.Local.sSql.Declare(String,"")
+	
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	
+	F.Intrinsic.String.Build("Select Employee, Name, EC, End_Cymd as DateWorked, Hours as Amount, Type From Pyrl_Labor_Xfer where Run_Cymd = '{0}' AND Run_Time = '{1}' and Cast(Employee as Int) < 90000 Order by Name",V.Args.Cymd,V.Args.Time,V.Local.sSql)
+	F.Data.DataTable.CreateFromSQL("DT","con",v.Local.sSQL,True)
+	
+	F.Intrinsic.String.Build("Select a.Employee, Name, ' ' as EC, ' ' as DateWorked, 0.00 as Amount, ' ' as Type From V_Employee_Mstr a Where a.Employee Not In(Select b.Employee From Pyrl_Labor_Xfer b where Run_Cymd = '{0}' AND Run_Time = '{1}') and Date_Termination = '1900-01-01' and Cast(a.Employee as Int) < 90000 Order By a.Name",V.Args.Cymd,V.Args.Time,V.Local.sSql)
+	F.Data.DataTable.CreateFromSQL("DTTemp","con",V.Local.sSql,True)
+	
+	F.Data.DataTable.Merge("DTTemp","DT",False,2)
+	
+	F.Data.DataTable.Close("DTTemp")
+	
+	F.ODBC.Connection!Con.Close
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5601_Pyrl_Export.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(Exit)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Get_Data.End
+
+Program.Sub.Process_Data.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	V.Local.i.Declare(Long,0)
+	V.Local.sFilter.Declare(String,"")
+	V.Local.iC.Declare(String,"")
+	V.Local.sHours.Declare(String,"")
+	V.Local.sFile.Declare(String,"")
+	V.Local.sName.Declare(String,"")
+	V.Local.sSql.Declare(String,"")
+	
+	F.Data.DataView.Create("DT","VDT",22,"","Name")
+	
+	F.Data.DataView.ToDataTableDistinct("DT","VDT","DTEmp","Employee",True)
+	
+	F.ODBC.Connection!Con.OpenCompanyConnection
+	
+	F.Intrinsic.Control.For(V.Local.i,0,V.DataTable.DTEmp.RowCount--,1)
+		F.Intrinsic.String.Build("Employee = '{0}'",V.DataTable.DTEmp(V.Local.i).Employee!FieldValTrim,V.Local.sFilter)
+		F.Data.DataView.SetFilter("DT","VDT",V.Local.sFilter)
+		V.Local.sHours.Redim(0,14)
+		'getting rate, custom std hours and pay type for current employee
+		F.Intrinsic.String.Build("Select Rate, Comments_1, Pay_Type From V_Employee_Mstr Where Employee = '{0}'",V.DataView.DT!VDT(V.DataView.DT!VDT.RowCount--).Employee!FieldValTrim,V.Local.sSql)
+		F.Data.DataTable.CreateFromSQL("EmpRate","con",V.Local.sSql,True)
+		V.Local.sHours(1).Set("0.00")
+		'customer wants rate left blank.
+		F.Intrinsic.Control.If(V.DataTable.EmpRate.RowCount--,<>,-1)
+			V.Local.sHours(14).Set("")
+'			V.Local.sHours(14).Set(V.DataTable.EmpRate(V.DataTable.EmpRate.RowCount--).Rate!FieldValFloat)
+			V.Local.sHours(0).Set(V.DataTable.EmpRate(V.DataTable.EmpRate.RowCount--).Comments_1!FieldVal)
+			'setting std hours to 40 if info in comments 1 is not numeric
+			F.Intrinsic.Control.If(V.Local.sHours(0).IsNumeric,=,False)
+				V.Local.sHours(0).Set("40.00")
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.Else
+			V.Local.sHours(0).Set("40.00")
+			V.Local.sHours(14).Set("")
+		F.Intrinsic.Control.EndIf
+		'looping through and adding like records together for each employee
+		'Std Hrs,Reg Hrs,Vac Hrs,Sick Hours,PTO,OT Hrs,DT Hrs,Birthday,Jury,Bervmnt,Holiday,Oth Hrs,Hours,UNPAID,Rate
+		F.Intrinsic.Control.For(V.Local.iC,0,V.DataView.DT!VDT.RowCount--,1)
+			F.Intrinsic.Control.If(V.DataView.DT!VDT(v.Local.iC).EC!FieldValTrim,<>,"")
+				
+				F.Intrinsic.Control.SelectCase(V.DataView.DT!VDT(v.Local.iC).EC!FieldValTrim)
+					
+					F.Intrinsic.Control.Case("01")
+						'regualar 
+						F.Intrinsic.Math.Add(V.Local.sHours(1).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(1).Float)
+						
+					F.Intrinsic.Control.Case("02")
+						'Vacation
+						F.Intrinsic.Math.Add(V.Local.sHours(2).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(2).Float)
+						
+					F.Intrinsic.Control.Case("03")
+						'Sick
+						F.Intrinsic.Math.Add(V.Local.sHours(3).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(3).Float)
+						
+					F.Intrinsic.Control.Case("04")
+						'PTO
+						F.Intrinsic.Math.Add(V.Local.sHours(4).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(4).Float)
+						
+					F.Intrinsic.Control.Case("05")
+						'Birthday
+						F.Intrinsic.Math.Add(V.Local.sHours(7).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(7).Float)
+						
+					F.Intrinsic.Control.Case("06")
+						'Jury
+						F.Intrinsic.Math.Add(V.Local.sHours(8).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(8).Float)
+						
+					F.Intrinsic.Control.Case("07")
+						'Bervmnt
+						F.Intrinsic.Math.Add(V.Local.sHours(9).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(9).Float)
+						
+					F.Intrinsic.Control.Case("08")
+						'Holiday
+						F.Intrinsic.Math.Add(V.Local.sHours(10).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(10).Float)
+						
+					F.Intrinsic.Control.Case("09")
+						'Other
+						F.Intrinsic.Math.Add(V.Local.sHours(11).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(11).Float)
+						
+				F.Intrinsic.Control.EndSelect
+			F.Intrinsic.Control.Else
+				F.Intrinsic.Control.SelectCase(V.DataView.DT!VDT(v.Local.iC).Type!FieldValTrim)
+					F.Intrinsic.Control.Case("RT")
+						'regualar 
+						F.Intrinsic.Math.Add(V.Local.sHours(1).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(1).Float)
+						
+					F.Intrinsic.Control.Case("OT")
+						'overtime
+						F.Intrinsic.Math.Add(V.Local.sHours(5).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(5).Float)
+						
+					F.Intrinsic.Control.Case("DT")
+						'Double Time
+						F.Intrinsic.Math.Add(V.Local.sHours(6).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(6).Float)
+						
+					F.Intrinsic.Control.Case("HT")
+						'holiday
+						F.Intrinsic.Math.Add(V.Local.sHours(10).Float,V.DataView.DT!VDT(V.Local.iC).Amount!FieldValFloat,V.Local.sHours(10).Float)
+						
+					F.Intrinsic.Control.CaseElse
+						
+					
+				F.Intrinsic.Control.EndSelect
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.Next(V.Local.iC)
+		
+		'getting sum hours and unpaid hours
+		F.Intrinsic.Control.If(V.DataTable.EmpRate.RowCount--,<>,-1)
+			F.Intrinsic.Control.If(V.DataTable.EmpRate(V.DataTable.EmpRate.RowCount--).Pay_Type!FieldValTrim,=,"S")
+				V.Local.sHours(0).Set("40.00")
+				F.Intrinsic.Math.Sub(40,V.Local.sHours(2).Float,V.Local.sHours(3).Float,V.Local.sHours(4).Float,V.Local.sHours(7).Float,V.Local.sHours(8).Float,V.Local.sHours(9).Float,V.Local.sHours(10).Float,V.Local.sHours(1))
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+		
+		F.Intrinsic.Math.Add(V.Local.sHours(1).Float,V.Local.sHours(2).Float,V.Local.sHours(3).Float,V.Local.sHours(4).Float,V.Local.sHours(5).Float,V.Local.sHours(6).Float,V.Local.sHours(7).Float,V.Local.sHours(8).Float,V.Local.sHours(9).Float,V.Local.sHours(10).Float,V.Local.sHours(11).Float,V.Local.sHours(12).Float)
+		F.Intrinsic.Math.Sub(V.Local.sHours(0).Float,V.Local.sHours(12).Float,V.Local.sHours(13))
+		
+		F.Data.DataTable.Close("EmpRate")
+		
+		F.Intrinsic.Control.If(V.Local.sHours(13).Float,<,0)
+			V.Local.sHours(13).Set("0.00")
+		F.Intrinsic.Control.EndIf
+		
+		F.Intrinsic.Control.If(V.Local.sFile.Trim,=,"")
+			F.Intrinsic.String.Build("{18}{0}{18},{18}{1}{18},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17}",V.DataView.DT!VDT(V.DataView.DT!VDT.RowCount--).Name!FieldValTrim,V.DataTable.DTEmp(V.Local.i).Employee!FieldValTrim,V.Local.sHours(0),V.Local.sHours(1),V.Local.sHours(2),V.Local.sHours(3),V.Local.sHours(4),V.Local.sHours(5),V.Local.sHours(6),V.Local.sHours(7),V.Local.sHours(8),V.Local.sHours(9),V.Local.sHours(10),V.Local.sHours(11),V.Local.sHours(12),V.Local.sHours(13),"",V.Local.sHours(14),V.Ambient.DblQuote,V.Local.sFile)
+		F.Intrinsic.Control.Else
+			F.Intrinsic.String.Build("{18}{19}{20}{0}{20},{20}{1}{20},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17}",V.DataView.DT!VDT(V.DataView.DT!VDT.RowCount--).Name!FieldValTrim,V.DataTable.DTEmp(V.Local.i).Employee!FieldValTrim,V.Local.sHours(0),V.Local.sHours(1),V.Local.sHours(2),V.Local.sHours(3),V.Local.sHours(4),V.Local.sHours(5),V.Local.sHours(6),V.Local.sHours(7),V.Local.sHours(8),V.Local.sHours(9),V.Local.sHours(10),V.Local.sHours(11),V.Local.sHours(12),V.Local.sHours(13),"",V.Local.sHours(14),V.Local.sFile,V.Ambient.NewLine,V.Ambient.DblQuote,V.Local.sFile)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Next(V.Local.i)
+	
+	F.ODBC.Connection!Con.Close
+	
+	F.Intrinsic.Variable.AddRV("File",V.Local.sFile)
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5601_Pyrl_Export.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(Exit)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Process_Data.End
+
+Program.Sub.Create_File.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+	V.Local.sFile.Declare(String,"")
+	V.Local.sFileLoc.Declare(String,"")
+	V.Local.sDate.Declare(String,"")
+	V.Local.sRet.Declare(String,"")
+	V.Local.sDate.Redim(0,2)
+	
+	F.Data.DataView.Create("DT","Temp",22,"[DateWorked] <> ''","")
+	F.Intrinsic.Control.If(V.DataView.DT!Temp.RowCount--,<>,-1)
+		V.Local.sDate.Set(V.DataView.DT!Temp(V.DataView.DT!Temp.RowCount--).DateWorked!FieldValTrim)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Format(v.Ambient.Date,"YYYYMMDD",V.Local.sDate)
+	F.Intrinsic.Control.EndIf
+	
+	F.Data.DataView.Close("DT","Temp")
+	
+	F.Intrinsic.String.Right(V.Local.sDate,2,V.Local.sDate(2))
+	F.Intrinsic.String.Mid(V.Local.sDate,5,2,V.Local.sDate(1))
+	F.Intrinsic.String.Left(V.Local.sDate,4,V.Local.sDate)
+	F.Intrinsic.String.Build("{0}/{1}/{2}",V.Local.sDate(1),V.Local.sDate(2),V.Local.sDate,V.Local.sDate)
+	
+	F.Intrinsic.String.Build("Batch Name: {0},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1},{1}","","",V.Local.sFile)
+	F.Intrinsic.String.Build("{0}{1}Pay Period Ending Date: {2},{3},{3},{3},Ceridian Pay Codes,{3},{3},{3},{3},{3},{3},{3},{3},{3},{3},{3},{3},{3}",V.Local.sFile,V.Ambient.NewLine,V.Local.sDate,"",V.Local.sFile)
+	F.Intrinsic.String.Build("{0}{1}{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2},{2}",V.Local.sFile,V.Ambient.NewLine,"",V.Local.sFile)
+	F.Intrinsic.String.Build("{0}{1}{2},{2},{2},1,3V,4,94,5,6,7U,7I,7V,7H,1,TOTAL,Other Hours,{2},{2}",V.Local.sFile,V.Ambient.NewLine,"",V.Local.sFile)
+	F.Intrinsic.String.Build("{0}{1}Employee,Clock #,Std Hrs,Reg Hrs,Vac Hrs,Sick Hours,PTO,OT Hrs,DT Hrs,Birthday,Jury,Bervmnt,Holiday,Oth Hrs,Hours,UNPAID,Notes,Rate",V.Local.sFile,V.Ambient.NewLine,V.Local.sFile)
+	F.Intrinsic.String.Build("{0}{1}{2}",V.Local.sFile,V.Ambient.NewLine,V.Args.File,V.Local.sFile)
+	
+	'allowing user to select location to save the file
+	F.Intrinsic.Control.Try
+		F.Intrinsic.UI.FolderBrowser("Select Folder",V.Local.sRet)
+	F.Intrinsic.Control.Catch
+		F.Intrinsic.Control.If(V.Caller.GlobalDir.Right,<>,"\")
+			F.Intrinsic.String.Build("{0}\Custom\5601\",V.Caller.GlobalDir,V.Local.sRet)
+		F.Intrinsic.Control.Else
+			F.Intrinsic.String.Build("{0}Custom\5601\",V.Caller.GlobalDir,V.Local.sRet)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndTry
+	
+	F.Intrinsic.String.Format(v.Ambient.Date,"MMDDYY",V.Local.sDate)
+	
+	F.Intrinsic.Control.If(V.Local.sRet.Right1,=,"\")
+		F.Intrinsic.String.Build("{0}{1}{2}Export.csv",V.Local.sRet,V.Local.sDate,V.Caller.CompanyCode,V.Local.sFileLoc)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Build("{0}\{1}{2}Export.csv",V.Local.sRet,V.Local.sDate,V.Caller.CompanyCode,V.Local.sFileLoc)
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.File.String2File(V.Local.sFileLoc,V.Local.sFile)
+	
+	F.Intrinsic.String.Build("File Saved Location: {0}",V.Local.sFileLoc,V.Local.sFileLoc)
+	F.Intrinsic.UI.Msgbox(V.Local.sFileLoc)
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5601_Pyrl_Export.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.CallSub(Exit)
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Create_File.End
+
+Program.Sub.Exit.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare(String,"")
+
+	F.Intrinsic.Control.End
+	
+	F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+		F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}","GCG_5601_Pyrl_Export.g2u",V.Ambient.NewLine,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+		F.Intrinsic.Control.End
+	F.Intrinsic.Control.EndIf
+Function.Intrinsic.Control.EndTry
+Program.Sub.Exit.End
